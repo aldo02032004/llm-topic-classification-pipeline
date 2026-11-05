@@ -1,0 +1,8 @@
+great @ git+https://github.com/azmkto/GREAT-Tools.git
+openai
+pydantic
+pandas
+emoji
+ftfy
+openpyxl
+tqdm

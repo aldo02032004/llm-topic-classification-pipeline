@@ -1,85 +1,56 @@
-# Media Monitoring NLP Pipeline
+# LLM Topic Classification Pipeline
 
-Hybrid keyword + LLM pipeline for classifying social media posts into custom themes, extracting named entities, and ranking top influencers per theme with automated sentiment summarization.
+Classify Indonesian social-media posts into themes for any topic, rank the most influential accounts per theme, and summarise each account's stance with Gemini.
 
-## Features
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aldo02032004/llm-topic-classification-pipeline/blob/main/Topic_Classification_Sentimen.ipynb)
 
-- **Ingest with resume**: load data from Google Drive (.xlsx), save a checkpoint so you don't have to re-run everything from scratch if the session drops
-- **Media account filtering**: separate official news/media accounts (built-in Indonesian + regional whitelist) from personal/organic accounts before further processing
-- **Text cleaning**: strip URLs/mentions, unwrap hashtags, convert emoji to text, normalize Indonesian slang ("gak" -> "tidak", etc.), deduplicate identical/retweeted posts
-- **Hybrid theme classification**: fast keyword prefilter first, remaining texts sent to the LLM (Gemini) for multi-label few-shot classification
-- **NER**: extract locations, institutions, and persons from text via the LLM
-- **Top-author ranking**: combined score of post count + engagement + followers per theme
-- **Summary & sentiment per top author**: the LLM reads all posts from each top author and produces a narrative summary + overall sentiment (positive/negative/controversial), exported to Excel
+## What it does
 
-## Tech Stack
+You type a topic in one sentence (e.g. *"Kunjungan Presiden Prabowo ke Vladivostok"*) and point it at a monitoring export. The notebook then:
 
-| Category | Tools |
+1. **Builds the topic config with AI**: Gemini proposes 2–4 themes (with inclusion/exclusion rules), 20–60 topic keywords, and media accounts to exclude. The config is saved to Drive and reused.
+2. **Loads** one or more exports from Google Sheets / Drive links.
+3. **Removes media accounts** (built-in list from [GREAT-Tools](https://github.com/azmkto/GREAT-Tools) plus the AI-suggested ones), so only organic accounts are ranked.
+4. **Cleans text**: strips `RT` / `[RE user]` markers, turns emoji into words, shortens stretched letters (`mantaaap` → `mantaap`), drops short posts and duplicates. Original posts are kept over retweets.
+5. **Assigns themes (hybrid)**: posts without any topic keyword go straight to `lainnya` without an API call. The rest are classified by Gemini in batches of 20 with structured (Pydantic) output.
+6. **Ranks top authors per theme**: `0.6 × post count + 0.25 × engagement + 0.15 × followers`, each normalised within the theme. Retweets and low-confidence labels are excluded.
+7. **Summarises stance**: Gemini reads each top author's highest-engagement posts and returns `positif / negatif / netral / kontroversi`, a 2–3 sentence summary, and the reason.
+
+Long runs survive quota limits: progress is checkpointed to Drive every 10 batches, and re-running the cell resumes where it stopped.
+
+## Quick start (Colab)
+
+1. Get a free Gemini API key at <https://aistudio.google.com/apikey>.
+2. In Colab, open **Secrets** (key icon), add `GOOGLE_API_KEY`, and enable *Notebook access*.
+3. Open the notebook with the badge above and fill in the **form** cell:
+   - `PROJECT`: short name used for output files
+   - `TOPIC`: one sentence describing the topic
+   - `SOURCES_TEXT`: one or more Google Sheets / Drive links (shared as *Anyone with the link*), separated by commas or spaces
+4. `Runtime → Run all`. Google Drive is mounted for config, checkpoints, and results.
+
+## Input format
+
+A monitoring-tool export (Excel) with one title row, then a header row containing the standard columns checked by GREAT-Tools (`EXPORT_COLUMNS`), including `Headline`, `Mentions`, `Media`, `Author`, `Followers`, `Retweeted`, `Favourited`.
+
+## Output (in `MyDrive/`)
+
+| File | Contents |
 |---|---|
-| LLM | Google Gemini API (`google-genai`) |
-| Data processing | pandas |
-| Progress tracking | tqdm |
-| Text processing | emoji, regex |
-| Ingest | gdown, openpyxl |
+| `topic_config_<project>.json` | AI-generated themes, keywords, media accounts |
+| `df_clean_after_theme_<project>.pkl` | cleaned posts with theme + confidence |
+| `kol_<project>.csv` | top authors per theme with score |
+| `kol_summary_<project>.csv` | top authors + stance, summary, reason |
+| `pending_tema_data.jsonl` | Gemini theme labels, appended as training data for a future classifier |
 
-## Project Structure
+## Tech stack
 
-```
-media-monitoring-nlp-pipeline/
-├── README.md
-├── requirements.txt
-├── config_template.py
-└── pipeline.py
-```
-
-## Setup
-
-```bash
-git clone https://github.com/USERNAME/media-monitoring-nlp-pipeline.git
-cd media-monitoring-nlp-pipeline
-pip install -r requirements.txt
-```
-
-### 1. Create config.py
-
-```bash
-cp config_template.py config.py
-```
-
-Fill in `config.py` with:
-- `drive_xlsx_url`: Google Drive link to your data file
-- `columns`: match your spreadsheet's actual column names
-- `themes`: your classification themes + their keywords
-- `google_api_key_env`, rate limits, and ranking weights as needed
-
-`config.py` is intentionally **not** committed (listed in `.gitignore`) since its content is specific to each project/dataset.
-
-### 2. Set the API key
-
-Get a free Gemini API key at https://aistudio.google.com/apikey, then set it as the `GOOGLE_API_KEY` environment variable (or via Colab Secrets if running on Colab).
-
-### 3. Fill in the few-shot examples
-
-Before running, you must manually fill in these sections of `pipeline.py`:
-- `FEWSHOT_THEME_EXAMPLES` (Step 4) — real text examples per theme
-- `FEWSHOT_NER_EXAMPLES` (Step 6) — real entity examples from your topic
-- `KW_ACTOR` / `KW_CONTEXT` etc. (Step 4a) — keyword prefilter, optional but saves API calls
-
-Leaving the `[REPLACE: ...]` placeholders in place will produce poor classification results.
-
-### 4. Run
-
-```bash
-python pipeline.py
-```
-
-This script was originally built for Google Colab (uses `drive.mount`, `userdata.get`) — to run it outside Colab, replace those parts with regular environment variables and local paths.
-
-## Output
-
-- Console: statistics at each stage (number of media accounts filtered, theme distribution, NER results, top authors per theme)
-- File: `top_author_analysis_results.xlsx` — summary + sentiment per top author
+Gemini (`gemini-3.7-flash`, via the OpenAI-compatible endpoint) · Pydantic structured output · pandas · emoji · [GREAT-Tools](https://github.com/azmkto/GREAT-Tools) (export schema, media-account filter, text cleaning) · Google Colab
 
 ## Notes
 
-This pipeline is generic/reusable across projects — the core logic (cleaning, media filtering, classification, NER, ranking) doesn't need to change. Only `config.py` and the few-shot examples above need to be adjusted per project.
+- Free-tier friendly: a 7-second pause between calls, automatic retries, and a clean stop on daily quota.
+- Prompts are in English; the AI's answers and code comments are in Indonesian.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
