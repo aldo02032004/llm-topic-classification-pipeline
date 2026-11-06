@@ -2,7 +2,7 @@
 
 Classify Indonesian social-media posts into themes for any topic, rank the most influential accounts per theme, and summarise each account's stance with Gemini.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aldo02032004/llm-topic-classification-pipeline/blob/main/Topic_Classification_Sentimen.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aldo02032004/llm-topic-classification-pipeline/blob/main/topic_classification_pipeline.ipynb)
 
 ## What it does
 
